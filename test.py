@@ -1,6 +1,12 @@
 import websockets
 import asyncio
 import json
+import logging
+import logging.config
+
+logging.config.fileConfig('logger.conf')
+logger = logging.getLogger('tradebot')
+
 
 PERCENT = 0.008
 BIDDING_PERCENT = 0.003
@@ -11,15 +17,13 @@ add_half_percent = lambda x : round(x * (1 + PERCENT / 2), 4)
 
 add_bidding_percent = lambda x: round(x * (1 + BIDDING_PERCENT), 4)
 
-total_profit = 0
-
 url = 'wss://api.bitfinex.com/ws'
 
 async def get_ticker():
     while True:
         try:
             async with websockets.connect(url) as websocket:
-                print('connected')
+                logger.debug('connected')
                 request = {
                    "event":"subscribe",
                    "channel":"ticker",
@@ -29,11 +33,10 @@ async def get_ticker():
 
                 while True:
                     ticker = json.loads(await websocket.recv())
-                    #print(ticker)
                     if len(ticker) == 11:
                         yield ticker[1]
         except Exception:
-            print('Connection lost. Retrying')
+            logger.debug('Connection lost. Retrying')
 
 #test_data = [
 #     #1.7424, 1.7428,
@@ -75,8 +78,9 @@ async def test():
     last_ticker = None
     bid_active = False
     starting_price = -1000
+    total_profit = 0.0
     async for current_ticker in get_ticker():
-        print(current_ticker) 
+        logger.debug(current_ticker)
         if not last_ticker: # skip first iteration
             last_ticker = current_ticker
             continue
@@ -89,21 +93,20 @@ async def test():
         if rising and current_ticker < last_ticker:
             # start falling
             rising = False
-            print('FALLING')
+            logger.debug('FALLING')
 
         if not rising and current_ticker > last_ticker:
             # start rising
             rising = True
             starting_price = last_ticker
-            print('RISING')
+            logger.debug('RISING')
 
         if rising and current_ticker > last_ticker: # still rising
             if not bid_active:
                 if should_bid(starting_price, current_ticker):
                     """Bidding here
                     """
-                    print('BIDDING')
-                    print(f'BUYING AT {current_ticker}')
+                    logger.info(f'BUYING AT {current_ticker}')
                     buying_price = current_ticker
                     bid_active = True
 
@@ -112,9 +115,9 @@ async def test():
 
             if add_one_percent(buying_price) <= current_ticker:
                 total_profit += current_ticker / buying_price - 1
-                print('SUCCESS')
-                print(f'SELLING AT {current_ticker}')
-                print(f'TOTAL PROFIT: {total_profit}')
+                logger.info('SUCCESS')
+                logger.info(f'SELLING AT {current_ticker}')
+                logger.info(f'TOTAL PROFIT: {round(total_profit * 100, 2)}%')
                 bid_active = False
                 buying_price = current_ticker
 
@@ -122,9 +125,9 @@ async def test():
 
             if sub_one_percent(buying_price) >= current_ticker:
                 total_profit += current_ticker / buying_price - 1
-                print('FAILED')
-                print(f'SELLING AT {current_ticker}')
-                print(f'TOTAL PROFIT: {total_profit}')
+                logger.info('FAILED')
+                logger.info(f'SELLING AT {current_ticker}')
+                logger.info(f'TOTAL PROFIT: {round(total_profit * 100, 2)}%')
                 bid_active = False
                 buying_price = current_ticker
 
